@@ -1,3 +1,86 @@
 ---
 
+- name: Inspect Caddy container
+  become: true
+  become_user: "{{ caddy_user }}"
+  containers.podman.podman_container_info:
+    name: caddy
+  register: caddy_container
+
+- name: Verify Caddy container is running
+  ansible.builtin.assert:
+    that:
+      - caddy_container.containers | length == 1
+      - caddy_container.containers[0].State.Running
+    quiet: true
+
+- name: Create test file
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ caddy_service_dir }}/site/test.txt"
+    content: "caddy-test-content\n"
+    owner: "{{ caddy_user }}"
+    group: "{{ caddy_user }}"
+    mode: "0644"
+
+- name: Check for selinux mode
+  ansible.builtin.command:
+    cmd: getenforce
+  failed_when: false
+  changed_when: false
+  register: se_linux_status
+
+- name: Ensure expected selinux context
+  become: true
+  when: ansible_facts.selinux.status | default("disabled") == "enabled"
+  block:
+    - name: Get SELinux context of Caddy site directory
+      become: true
+      ansible.builtin.command:
+        cmd: "stat --format=%C {{ caddy_service_dir }}/site"
+      register: caddy_site_selinux_context
+      changed_when: false
+
+    - name: Apply Caddy site SELinux context to test file
+      become: true
+      ansible.builtin.file:
+        path: "{{ caddy_service_dir }}/site/test.txt"
+        seuser: "{{ caddy_site_selinux_context.stdout.split(':')[0] }}"
+        serole: "{{ caddy_site_selinux_context.stdout.split(':')[1] }}"
+        setype: "{{ caddy_site_selinux_context.stdout.split(':')[2] }}"
+        selevel: >-
+          {{
+            caddy_site_selinux_context.stdout.split(':')[3:]
+            | join(':')
+          }}
+
+- name: Verify directory browsing
+  ansible.builtin.uri:
+    url: http://localhost:8080
+    return_content: true
+    status_code: 200
+  register: caddy_index
+
+- name: Verify test file appears in directory listing
+  ansible.builtin.assert:
+    that: "'test.txt' in caddy_index.content"
+    quiet: true
+
+- name: Verify nonexistent files return 404
+  ansible.builtin.uri:
+    url: http://localhost:8080/does-not-exist
+    status_code: 404
+
+- name: Verify test file is served
+  ansible.builtin.uri:
+    url: http://localhost:8080/test.txt
+    return_content: true
+    status_code: 200
+  register: caddy_test
+
+- name: Verify returned content
+  ansible.builtin.assert:
+    that: "'caddy-test-content' in caddy_test.content"
+    quiet: true
+
 ...
