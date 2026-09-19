@@ -1,5 +1,54 @@
 ---
 
 state: present
+caddy_user: "srv_caddy"
+caddy_user_home: "/var/lib/{{ caddy_user }}"
+caddy_service_dir: "{{ caddy_user_home }}/caddy_service"
+caddy_image: "docker.io/library/caddy:latest"
+caddy_container_name: "caddy"
+caddy_file_src: Caddyfile
+caddy_certifiacte: ""
+caddy_configure_firewalld: true
+caddy_user_uid_map:  # podman run --user=root --rm docker.io/library/caddy bash -c "find -mount -printf \"%U=%u\n\" | sort -un" 2>/dev/null
+  caddy: 700
+  postgres: 26
+caddy_firewall_rules:
+  - name: http
+    port: 8080/tcp
+  - name: https
+    port: 8443/tcp
+  - name: https
+    port: 8443/udp
+caddy_container_ports:
+  - "8080:80"
+  - "8443:443"
+caddy_volumes:
+  - name: "config"
+    host_path: "{{ caddy_service_dir }}/caddy_config"
+    container_path: "/config"
+    owner: "{{ caddy_user_uid_map.caddy + (subuids.stdout.split(':')[1] | int) - 1 }}"
+    group: "{{ caddy_user_uid_map.caddy + (subgids.stdout.split(':')[1] | int) - 1 }}"
+    permissions: "0755"
+  - name: "data"
+    host_path: "{{ caddy_service_dir }}/caddy_data"
+    container_path: "/data"
+    owner: "{{ caddy_user_uid_map.caddy + (subuids.stdout.split(':')[1] | int) - 1 }}"
+    group: "{{ caddy_user_uid_map.caddy + (subgids.stdout.split(':')[1] | int) - 1 }}"
+    permissions: "0755"
+    options: [rw]
+  - name: "conf"
+    host_path: "{{ caddy_service_dir }}/conf"
+    container_path: "/etc/caddy"
+    owner: "{{ caddy_user_uid_map.caddy + (subuids.stdout.split(':')[1] | int) - 1 }}"
+    group: "{{ caddy_user_uid_map.caddy + (subgids.stdout.split(':')[1] | int) - 1 }}"
+    permissions: "0755"
+    options: [ro]
+  - name: "serve"
+    host_path: "{{ caddy_service_dir }}/site"
+    container_path: "/srv/caddy"
+    owner: "{{ caddy_user_uid_map.caddy + (subuids.stdout.split(':')[1] | int) - 1 }}"
+    group: "{{ caddy_user_uid_map.caddy + (subgids.stdout.split(':')[1] | int) - 1 }}"
+    permissions: "0755"
+    options: [rw]
 
 ...

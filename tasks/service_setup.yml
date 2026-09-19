@@ -1,0 +1,133 @@
+---
+
+- name: Read /etc/subuid
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      cat /etc/subuid | grep {{ caddy_user }}
+    executable: /bin/bash
+  register: subuids
+  changed_when: false
+
+- name: Read /etc/subgid
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      cat /etc/subgid | grep {{ caddy_user }}
+    executable: /bin/bash
+  register: subgids
+  changed_when: false
+
+- name: Ensure directories for volumes exist
+  become: true
+  loop: "{{ caddy_volumes }}"
+  loop_control:
+    loop_var: volume
+    label: "{{ volume.name }}"
+  when: not (volume.file | default(false))
+  ansible.builtin.file:
+    path: "{{ volume.host_path }}"
+    state: directory
+    owner: "{{ volume.owner | default(caddy_user) }}"
+    group: "{{ volume.group | default(caddy_user) }}"
+    mode: "{{ volume.permissions }}"
+
+- name: Ensure .config/systemd/user directory exists
+  become: true
+  ansible.builtin.file:
+    path: "{{ caddy_user_home }}/.config/containers/systemd"
+    state: directory
+    owner: "{{ caddy_user }}"
+    group: "{{ caddy_user }}"
+    mode: "0700"
+
+- name: Generate list of volume mappings
+  ansible.builtin.set_fact:
+    caddy_volumes_mounts: >-
+      {{ caddy_volumes
+        | map(attribute='host_path')
+        | zip(caddy_volumes | map(attribute='container_path'))
+        | map('join', ':')
+        | list }}
+
+- name: "Look up entry in passwd for user {{ caddy_user }}"
+  become: true
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ caddy_user }}"
+
+- name: Set caddy user uid
+  ansible.builtin.set_fact:
+    caddy_uid: "{{ ansible_facts.getent_passwd[caddy_user][1] }}"
+
+- name: Copy caddyfile
+  become: true
+  ansible.builtin.copy:
+    src: "{{ caddy_file_src }}"
+    dest: "{{ caddy_service_dir }}/conf/Caddyfile"
+    owner: "{{ caddy_user }}"
+    group: "{{ caddy_user }}"
+    mode: "0640"
+  register: caddyfile_result
+
+- name: Copy provided ca certificate to Caddy configuration
+  become: true
+  when: caddy_certifiacte != ""
+  ansible.builtin.copy:
+    src: "{{ caddy_certifiacte }}"
+    dest: "{{ caddy_service_dir }}/conf/{{ caddy_certifiacte | basename }}"
+    remote_src: true
+    owner: "{{ caddy_user }}"
+    group: "{{ caddy_user }}"
+    mode: "0644"
+
+- name: Template caddy quadlet
+  become: true
+  ansible.builtin.template:
+    src: caddy.container.j2
+    dest: "{{ caddy_user_home }}/.config/containers/systemd/caddy.container"
+    owner: "{{ caddy_user }}"
+    group: "{{ caddy_user }}"
+    mode: "0640"
+  register: caddyquad_result
+
+# Note /var/run/user/<uid>/systemd/generator/caddy.service
+- name: Start or restart Caddy
+  become: true
+  become_user: "{{ caddy_user }}"
+  ansible.builtin.systemd_service:
+    name: "{{ caddy_container_name }}.service"
+    scope: user
+    state: "{{ caddyquad_result.changed | ternary('restarted', 'started') }}"
+    daemon_reload: true
+
+- name: Validate Caddy configuration
+  become: true
+  become_user: "{{ caddy_user }}"
+  when:
+    - caddyfile_result.changed
+    - not caddyquad_result.changed
+  containers.podman.podman_container_exec:
+    name: "{{ caddy_container_name }}"
+    argv:
+      - caddy
+      - validate
+      - --config
+      - /etc/caddy/Caddyfile
+  changed_when: false
+
+- name: Reload Caddy configuration
+  become: true
+  become_user: "{{ caddy_user }}"
+  when:
+    - caddyfile_result.changed
+    - not caddyquad_result.changed
+  containers.podman.podman_container_exec:
+    name: "{{ caddy_container_name }}"
+    argv:
+      - caddy
+      - reload
+      - --config
+      - /etc/caddy/Caddyfile
+
+...

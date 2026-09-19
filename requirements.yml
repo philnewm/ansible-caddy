@@ -1,6 +1,10 @@
-# Add ansible role requirements
+---
+
 collections:
   - community.general
+  - containers.podman
 
-# roles:
-#   - name: <role.name>
+roles:
+  - name: philnewm.podman_rootless_user
+
+...
