@@ -7,11 +7,11 @@ caddy_service_dir: "{{ caddy_user_home }}/caddy_service"
 caddy_image: "docker.io/library/caddy:latest"
 caddy_container_name: "caddy"
 caddy_file_src: Caddyfile
-caddy_certifiacte: ""
+caddy_certificate: ""
 caddy_configure_firewalld: true
+# TODO check if obsolete
 caddy_user_uid_map:  # podman run --user=root --rm docker.io/library/caddy bash -c "find -mount -printf \"%U=%u\n\" | sort -un" 2>/dev/null
   caddy: 700
-  postgres: 26
 caddy_firewall_rules:
   - name: http
     port: 8080/tcp
@@ -22,6 +22,7 @@ caddy_firewall_rules:
 caddy_container_ports:
   - "8080:80"
   - "8443:443"
+# TODO check if `caddy_user_uid_map` is relevant
 caddy_volumes:
   - name: "config"
     host_path: "{{ caddy_service_dir }}/caddy_config"
