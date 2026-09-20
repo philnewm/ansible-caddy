@@ -72,10 +72,10 @@
 
 - name: Copy provided ca certificate to Caddy configuration
   become: true
-  when: caddy_certifiacte != ""
+  when: caddy_certificate != ""
   ansible.builtin.copy:
-    src: "{{ caddy_certifiacte }}"
-    dest: "{{ caddy_service_dir }}/conf/{{ caddy_certifiacte | basename }}"
+    src: "{{ caddy_certificate }}"
+    dest: "{{ caddy_service_dir }}/conf/{{ caddy_certificate | basename }}"
     remote_src: true
     owner: "{{ caddy_user }}"
     group: "{{ caddy_user }}"
@@ -91,43 +91,54 @@
     mode: "0640"
   register: caddyquad_result
 
-# Note /var/run/user/<uid>/systemd/generator/caddy.service
-- name: Start or restart Caddy
+- name: Manage rootless Caddy service
   become: true
   become_user: "{{ caddy_user }}"
-  ansible.builtin.systemd_service:
-    name: "{{ caddy_container_name }}.service"
-    scope: user
-    state: "{{ caddyquad_result.changed | ternary('restarted', 'started') }}"
-    daemon_reload: true
+  vars:
+    # Overriding the become_user task keyword.
+    # Effects even global overrides (like Foreman remote execution)
+    ansible_become_user: "{{ caddy_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ caddy_uid }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ caddy_uid }}/bus"
+  block:
+    # creates /var/run/user/<uid>/systemd/generator/caddy.service
+    - name: Start or restart Caddy
+      become: true
+      become_user: "{{ caddy_user }}"
+      ansible.builtin.systemd_service:
+        name: "{{ caddy_container_name }}.service"
+        scope: user
+        state: "{{ caddyquad_result.changed | ternary('restarted', 'started') }}"
+        daemon_reload: true
 
-- name: Validate Caddy configuration
-  become: true
-  become_user: "{{ caddy_user }}"
-  when:
-    - caddyfile_result.changed
-    - not caddyquad_result.changed
-  containers.podman.podman_container_exec:
-    name: "{{ caddy_container_name }}"
-    argv:
-      - caddy
-      - validate
-      - --config
-      - /etc/caddy/Caddyfile
-  changed_when: false
+    - name: Validate Caddy configuration
+      become: true
+      become_user: "{{ caddy_user }}"
+      when:
+        - caddyfile_result.changed
+        - not caddyquad_result.changed
+      containers.podman.podman_container_exec:
+        name: "{{ caddy_container_name }}"
+        argv:
+          - caddy
+          - validate
+          - --config
+          - /etc/caddy/Caddyfile
+      changed_when: false
 
-- name: Reload Caddy configuration
-  become: true
-  become_user: "{{ caddy_user }}"
-  when:
-    - caddyfile_result.changed
-    - not caddyquad_result.changed
-  containers.podman.podman_container_exec:
-    name: "{{ caddy_container_name }}"
-    argv:
-      - caddy
-      - reload
-      - --config
-      - /etc/caddy/Caddyfile
+    - name: Reload Caddy configuration
+      become: true
+      become_user: "{{ caddy_user }}"
+      when:
+        - caddyfile_result.changed
+        - not caddyquad_result.changed
+      containers.podman.podman_container_exec:
+        name: "{{ caddy_container_name }}"
+        argv:
+          - caddy
+          - reload
+          - --config
+          - /etc/caddy/Caddyfile
 
 ...
