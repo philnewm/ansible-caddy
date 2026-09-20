@@ -20,9 +20,6 @@
   ansible.builtin.include_tasks:
     file: service_setup.yml
 
-- name: Gather service facts
-  ansible.builtin.service_facts:
-
 - name: Configure firwalld
   become: true
   when: caddy_configure_firewalld
