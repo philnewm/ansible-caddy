@@ -10,45 +10,40 @@ caddy_file_src: Caddyfile
 caddy_certificate: ""
 caddy_configure_firewalld: true
 # TODO check if obsolete
-caddy_user_uid_map:  # podman run --user=root --rm docker.io/library/caddy bash -c "find -mount -printf \"%U=%u\n\" | sort -un" 2>/dev/null
-  caddy: 700
-caddy_firewall_rules:
-  - name: http
-    port: 8080/tcp
-  - name: https
-    port: 8443/tcp
-  - name: https
-    port: 8443/udp
+caddy_user_uid_map:
+  caddy:
+    uid: 0
+    gid: 0
 caddy_container_ports:
   - "8080:80"
   - "8443:443"
 # TODO check if `caddy_user_uid_map` is relevant
 caddy_volumes:
-  - name: "config"
+  config:
     host_path: "{{ caddy_service_dir }}/caddy_config"
     container_path: "/config"
-    owner: "{{ caddy_user_uid_map.caddy + (subuids.stdout.split(':')[1] | int) - 1 }}"
-    group: "{{ caddy_user_uid_map.caddy + (subgids.stdout.split(':')[1] | int) - 1 }}"
+    owner: "{{ caddy_config_owner }}"
+    group: "{{ caddy_config_group }}"
     permissions: "0755"
-  - name: "data"
+  data:
     host_path: "{{ caddy_service_dir }}/caddy_data"
     container_path: "/data"
-    owner: "{{ caddy_user_uid_map.caddy + (subuids.stdout.split(':')[1] | int) - 1 }}"
-    group: "{{ caddy_user_uid_map.caddy + (subgids.stdout.split(':')[1] | int) - 1 }}"
+    owner: "{{ caddy_config_owner }}"
+    group: "{{ caddy_config_group }}"
     permissions: "0755"
     options: [rw]
-  - name: "conf"
+  conf:
     host_path: "{{ caddy_service_dir }}/conf"
     container_path: "/etc/caddy"
-    owner: "{{ caddy_user_uid_map.caddy + (subuids.stdout.split(':')[1] | int) - 1 }}"
-    group: "{{ caddy_user_uid_map.caddy + (subgids.stdout.split(':')[1] | int) - 1 }}"
+    owner: "{{ caddy_config_owner }}"
+    group: "{{ caddy_config_group }}"
     permissions: "0755"
     options: [ro]
-  - name: "serve"
+  serve:
     host_path: "{{ caddy_service_dir }}/site"
     container_path: "/srv/caddy"
-    owner: "{{ caddy_user_uid_map.caddy + (subuids.stdout.split(':')[1] | int) - 1 }}"
-    group: "{{ caddy_user_uid_map.caddy + (subgids.stdout.split(':')[1] | int) - 1 }}"
+    owner: "{{ caddy_config_owner }}"
+    group: "{{ caddy_config_group }}"
     permissions: "0755"
     options: [rw]
 
