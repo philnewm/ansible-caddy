@@ -1,5 +1,16 @@
 ---
 
+- name: "Look up entry in passwd for user {{ caddy_user }}"
+  become: true
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ caddy_user }}"
+
+- name: Set caddy user uid
+  ansible.builtin.set_fact:
+    caddy_uid: "{{ ansible_facts.getent_passwd[caddy_user][1] }}"
+    caddy_gid: "{{ ansible_facts.getent_passwd[caddy_user][2] }}"
+
 - name: Read /etc/subuid
   ansible.builtin.shell:
     cmd: |
@@ -18,19 +29,27 @@
   register: subgids
   changed_when: false
 
+- name: Set owner and group
+  ansible.builtin.set_fact:
+    caddy_config_owner: >-
+      {{ caddy_uid | int if caddy_user_uid_map.caddy.uid | int == 0
+        else (subuids.stdout.split(':')[1] | int) + (caddy_user_uid_map.caddy.uid | int) - 1 }}
+    caddy_config_group: >-
+      {{ caddy_gid | int if caddy_user_uid_map.caddy.gid | int == 0
+        else (subgids.stdout.split(':')[1] | int) + (caddy_user_uid_map.caddy.gid | int) - 1 }}
+
 - name: Ensure directories for volumes exist
   become: true
-  loop: "{{ caddy_volumes }}"
+  loop: "{{ caddy_volumes | dict2items }}"
   loop_control:
     loop_var: volume
-    label: "{{ volume.name }}"
-  when: not (volume.file | default(false))
+    label: "{{ volume.key }}"
   ansible.builtin.file:
-    path: "{{ volume.host_path }}"
+    path: "{{ volume.value.host_path }}"
     state: directory
-    owner: "{{ volume.owner | default(caddy_user) }}"
-    group: "{{ volume.group | default(caddy_user) }}"
-    mode: "{{ volume.permissions }}"
+    owner: "{{ volume.value.owner }}"
+    group: "{{ volume.value.group }}"
+    mode: "{{ volume.value.permissions }}"
 
 - name: Ensure .config/systemd/user directory exists
   become: true
@@ -40,15 +59,6 @@
     owner: "{{ caddy_user }}"
     group: "{{ caddy_user }}"
     mode: "0700"
-
-- name: Generate list of volume mappings
-  ansible.builtin.set_fact:
-    caddy_volumes_mounts: >-
-      {{ caddy_volumes
-        | map(attribute='host_path')
-        | zip(caddy_volumes | map(attribute='container_path'))
-        | map('join', ':')
-        | list }}
 
 - name: "Look up entry in passwd for user {{ caddy_user }}"
   become: true
