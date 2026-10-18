@@ -21,7 +21,7 @@ PublishPort={{ port }}
 {% endfor %}
 
 # Volumes
-{% for volume in caddy_volumes %}
+{% for volume_name, volume in caddy_volumes.items() %}
 {% set options = volume.options | default([]) + (['Z'] if ansible_facts.selinux.status | default('disabled') == 'enabled' else []) +%}
 Volume={{ volume.host_path }}:{{ volume.container_path }}{% if options %}:{{ options | join(',') }}{% endif %}
 {% endfor %}
